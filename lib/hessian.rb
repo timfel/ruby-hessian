@@ -1,0 +1,176 @@
+require 'uri'
+require 'net/http'
+
+module Hessian
+  class Binary
+    attr :data
+    def initialize(data)
+      @data = data.to_s
+    end
+  end
+
+  class HessianException < RuntimeError
+    attr_reader :code
+    def initialize(code)
+      @code = code
+    end
+  end
+
+  class HessianClient
+    attr_reader :host, :port, :path
+    def initialize(url)
+      uri = URI.parse(url)
+      @host, @port, @path = uri.host, uri.port, uri.path
+      raise "Unsupported Hessian protocol: #{uri.scheme}" unless uri.scheme == "http"
+    end
+
+    def method_missing(id, *args)
+      return invoke(id.id2name, args)
+    end
+
+    private
+    def invoke(method, args)
+      req = HessianWriter.new.write_call method, args
+      header = { 'Content-Type' => 'application/binary' }
+      Net::HTTP.start(@host, @port) do |http|
+        res = http.send_request('POST', @path, req, header)
+        HessianParser.new.parse_response res.body
+      end
+    end
+
+    class HessianWriter
+      def write_call(method, args)
+        @refs = {}
+        out = [ 'c', '0', '1', 'm', method.length ].pack('ahhan') << method
+        args.each { |arg| out << write_object(arg) }
+        out << 'z'
+      end
+
+      private
+      def write_object(val)
+        return 'N' if val.nil?
+        case val
+        when Binary: [ 'B', val.data.length ].pack('an') << val.data
+        when String: [ 'S', val.length ].pack('an') << val.unpack('C*').pack('U*')
+        when Integer
+          # Max and min values for integers in Java.
+          if val >= -0x80000000 && val <= 0x7fffffff
+            [ 'I', val ].pack('aN')
+          else
+            "L%s" % to_long(val)
+          end
+        when Float: [ 'D', val ].pack('aG')
+        when Time: "d%s" % to_long(val.to_i * 1000)
+        when TrueClass: 'T'
+        when FalseClass: 'F'
+        when Array
+          ref = write_ref val; return ref if ref
+          str = [ 'V', 't', '0', '0', 'l', val.length ].pack('aahhaN')
+          val.each { |v| str << write_object(v) }
+          str << 'z'
+        when Hash
+          ref = write_ref val; return ref if ref
+          str = [ 'M', 't', '0', '0' ].pack('aahh')
+          val.each { |k, v| str << write_object(k); str << write_object(v) }
+          str << 'z'
+        else
+          raise "Not implemented for #{val.class}"
+        end
+      end
+      
+      def to_long(val)
+        str, pos = " " * 8, 0
+        56.step(0, -8) { |o| str[pos] = val >> o & 0x00000000000000ff; pos += 1 }
+        str
+      end
+
+      def write_ref(val)
+        id = @refs[val.object_id]
+        if id
+          [ 'R', id ].pack('aN')
+        else
+          @refs[val.object_id] = @refs.length
+          nil
+        end
+      end
+    end
+
+    class HessianParser
+      def parse_response(res)
+        raise "Invalid response, expected 'r', received '#{res[0,1]}'" unless res[0,1] == 'r'
+        @chunks = []
+        @refs = []
+        @data = res[3..-1]
+        parse_object
+      end
+
+      private
+      def parse_object
+        t = @data.slice!(0, 1)
+        case t
+        when 'f': raise_exception
+        when 's', 'S', 'x', 'X'
+          v = from_utf8(@data.slice!(0, 2).unpack('n')[0])
+          @data.slice!(0, v[1])
+          @chunks << v[0]
+          if 'sx'.include? t
+            parse_object
+          else
+            str = @chunks.join; @chunks.clear; str
+          end
+        when 'b', 'B'
+          v = @data.slice!(0, @data.slice!(0, 2).unpack('n')[0])
+          @chunks << v
+          if t == 'b'
+            parse_object
+          else
+            bytes = @chunks.join; @chunks.clear; Binary.new bytes
+          end
+        when 'I': @data.slice!(0, 4).unpack('N')[0]
+        when 'L': parse_long
+        when 'd': l = parse_long; Time.at(l / 1000, l % 1000 * 1000)
+        when 'D': @data.slice!(0, 8).unpack('G')[0]
+        when 'T': true
+        when 'F': false
+        when 'N': nil
+        when 'R': @refs[@data.slice!(0, 4).unpack('N')[0]]
+        when 'V'
+          # Skip type + type length (2 bytes) if specified.
+          @data.slice!(0, 3 + @data.unpack('an')[1]) if @data[0,1] == 't'
+          # Skip the list length if specified.
+          @data.slice!(0, 5) if @data[0,1] == 'l'
+          @refs << (list = [])
+          list << parse_object while @data[0,1] != 'z'; list
+        when 'M'
+          # Skip type + type length (2 bytes) if specified.
+          @data.slice!(0, 3 + @data.unpack('an')[1]) if @data[0,1] == 't'
+          @refs << (map = {})
+          map[parse_object()] = parse_object while @data[0,1] != 'z'; map
+        else
+          raise "Invalid type: '#{t}'"
+        end
+      end
+      
+      def from_utf8(len = '*')
+        s = @data.unpack("U#{len}").pack('C*')
+        [ s, s.unpack('C*').pack('U*').length ]
+      end
+
+      def parse_long
+        val, o = 0, 56
+        @data.slice!(0, 8).each_byte { |b| val += (b & 0xff) << o; o -= 8 }
+        val
+      end
+
+      def raise_exception
+        # Skip code description.
+        parse_object
+        code = parse_object
+        # Skip message description
+        parse_object
+        msg = parse_object
+        raise HessianException.new(code), msg
+      end
+    end
+  end
+end
