@@ -1,8 +1,21 @@
 require 'rubygems'
 require 'rake/gempackagetask'
+require 'rake/testtask'
+
+task :default => [:test]
+
+Rake::TestTask.new do |t|
+  t.verbose = true
+  t.warning = true
+end
 
 PKG_VERSION = "1.0.0"
-PKG_FILES = FileList['lib/**/*.rb']
+PKG_FILES = FileList[
+  'LICENSE',
+  'Rakefile',
+  'lib/**/*.rb',
+  'test/**/test_*.rb'
+]
 
 spec = Gem::Specification.new do |s|
   s.name = "hessian"
@@ -18,5 +31,5 @@ end
 
 package_task = Rake::GemPackageTask.new(spec) do |pkg|
   pkg.need_zip = true
-  pkg.need_tar = true
+  pkg.need_tar_gz = true
 end
