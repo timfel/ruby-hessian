@@ -17,11 +17,12 @@ module Hessian
   end
 
   class HessianClient
-    attr_reader :host, :port, :path
-    def initialize(url)
+    attr_reader :host, :port, :path, :proxy
+    def initialize(url, proxy = {})
       uri = URI.parse(url)
       @host, @port, @path = uri.host, uri.port, uri.path
       raise "Unsupported Hessian protocol: #{uri.scheme}" unless uri.scheme == "http"
+      @proxy = proxy
     end
 
     def method_missing(id, *args)
@@ -32,7 +33,7 @@ module Hessian
     def invoke(method, args)
       req = HessianWriter.new.write_call method, args
       header = { 'Content-Type' => 'application/binary' }
-      Net::HTTP.start(@host, @port) do |http|
+      Net::HTTP.start(@host, @port, *@proxy.values_at(:host, :port, :user, :password)) do |http|
         res = http.send_request('POST', @path, req, header)
         HessianParser.new.parse_response res.body
       end
