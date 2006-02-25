@@ -1,5 +1,6 @@
 require 'uri'
 require 'net/http'
+require 'net/https'
 
 module Hessian
   class Binary
@@ -17,11 +18,11 @@ module Hessian
   end
 
   class HessianClient
-    attr_reader :host, :port, :path, :proxy
+    attr_reader :scheme, :host, :port, :path, :proxy
     def initialize(url, proxy = {})
       uri = URI.parse(url)
-      @host, @port, @path = uri.host, uri.port, uri.path
-      raise "Unsupported Hessian protocol: #{uri.scheme}" unless uri.scheme == "http"
+      @scheme, @host, @port, @path = uri.scheme, uri.host, uri.port, uri.path
+      raise "Unsupported Hessian protocol: #@scheme" unless @scheme == 'http' || @scheme == 'https'
       @proxy = proxy
     end
 
@@ -33,7 +34,9 @@ module Hessian
     def invoke(method, args)
       req = HessianWriter.new.write_call method, args
       header = { 'Content-Type' => 'application/binary' }
-      Net::HTTP.start(@host, @port, *@proxy.values_at(:host, :port, :user, :password)) do |http|
+      conn = Net::HTTP.new(@host, @port, *@proxy.values_at(:host, :port, :user, :password))
+      conn.use_ssl = true and conn.verify_mode = OpenSSL::SSL::VERIFY_NONE if @scheme == 'https'
+      conn.start do |http|
         res = http.send_request('POST', @path, req, header)
         HessianParser.new.parse_response res.body
       end
