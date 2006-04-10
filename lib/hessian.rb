@@ -144,12 +144,18 @@ module Hessian
           # Skip the list length if specified.
           @data.slice!(0, 5) if @data[0,1] == 'l'
           @refs << (list = [])
-          list << parse_object while @data[0,1] != 'z'; list
+          list << parse_object while @data[0,1] != 'z'
+          # Get rid of the 'z'.
+          @data.slice!(0, 1)
+          list
         when 'M'
           # Skip type + type length (2 bytes) if specified.
           @data.slice!(0, 3 + @data.unpack('an')[1]) if @data[0,1] == 't'
           @refs << (map = {})
-          map[parse_object()] = parse_object while @data[0,1] != 'z'; map
+          map[parse_object()] = parse_object while @data[0,1] != 'z'
+          # Get rid of the 'z'.
+          @data.slice!(0, 1)
+          map
         else
           raise "Invalid type: '#{t}'"
         end
