@@ -46,7 +46,7 @@ class HessianParserTest < Test::Unit::TestCase
       "I\000\000\000\003zzz" ].join)
   end
   def test_map
-    map = { 'numbers' => [ 1.1, 1.2, 1.3 ] }
+    map = { 'sillen' => 32, 'numbers' => [ 1.1, 1.2, 1.3 ] }
     assert_equal map, parse([ "r\001\000Mt\000\000S\000\anumbersVt\000\a[double",
       "l\000\000\000\003D?\361\231\231\231\231\231\232D?\363333333D?",
       "\364\314\314\314\314\314\315zS\000\006sillenI\000\000\000 zz" ].join)
