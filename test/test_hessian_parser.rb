@@ -31,6 +31,7 @@ class HessianParserTest < Test::Unit::TestCase
     time = parse("r\001\000d\000\000\001\010\344\036\332\360z")
     assert_instance_of Time, time
     assert_equal '2006-01-19 20:23:13', time.strftime("%Y-%m-%d %H:%M:%S")
+    assert_equal 520000, time.usec
   end
   def test_integer_array
     assert_equal [ 1, 2, 3 ], parse([ "r\001\000Vt\000\004[intl\000\000\000\003",

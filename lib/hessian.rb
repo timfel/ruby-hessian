@@ -76,7 +76,7 @@ module Hessian
             "L%s" % to_long(val)
           end
         when Float: [ 'D', val ].pack('aG')
-        when Time: "d%s" % to_long(val.to_i * 1000)
+        when Time: "d%s" % to_long((val.to_f * 1000).to_i)
         when TrueClass: 'T'
         when FalseClass: 'F'
         when Array
