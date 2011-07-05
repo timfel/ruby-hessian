@@ -64,21 +64,30 @@ module Hessian
       def write_object(val, hessian_type = nil)
         return 'N' if val.nil?
         case val
-        when TypeWrapper: write_object(val.object, val.hessian_type)
-        when Struct: write_object(val.members.inject({}) { |map, m| map[m] = val[m]; map })
-        when Binary: [ 'B', val.data.length ].pack('an') << val.data
-        when String: [ 'S', val.length ].pack('an') << val.unpack('C*').pack('U*')
-        when Integer
+        when TypeWrapper
+          write_object(val.object, val.hessian_type)
+        when Struct
+          write_object(val.members.inject({}) { |map, m| map[m] = val[m]; map })
+        when Binary
+          [ 'B', val.data.length ].pack('an') << val.data
+        when String
+          [ 'S', val.length ].pack('an') << val.unpack('C*').pack('U*')
+        when
+          Integer
           # Max and min values for integers in Java.
           if val >= -0x80000000 && val <= 0x7fffffff
             [ 'I', val ].pack('aN')
           else
             "L%s" % to_long(val)
           end
-        when Float: [ 'D', val ].pack('aG')
-        when Time: "d%s" % to_long((val.to_f * 1000).to_i)
-        when TrueClass: 'T'
-        when FalseClass: 'F'
+        when Float
+          [ 'D', val ].pack('aG')
+        when Time
+          "d%s" % to_long((val.to_f * 1000).to_i)
+        when TrueClass
+          'T'
+        when FalseClass
+          'F'
         when Array
           ref = write_ref val; return ref if ref
           t = hessian_type_string(hessian_type, val)
@@ -132,7 +141,8 @@ module Hessian
       def parse_object
         t = @data.slice!(0, 1)
         case t
-        when 'f': raise_exception
+        when 'f'
+            raise_exception
         when 's', 'S', 'x', 'X'
           v = from_utf8(@data.slice!(0, 2).unpack('n')[0])
           @data.slice!(0, v[1])
@@ -150,14 +160,22 @@ module Hessian
           else
             bytes = @chunks.join; @chunks.clear; Binary.new bytes
           end
-        when 'I': @data.slice!(0, 4).unpack('N')[0]
-        when 'L': parse_long
-        when 'd': l = parse_long; Time.at(l / 1000, l % 1000 * 1000)
-        when 'D': @data.slice!(0, 8).unpack('G')[0]
-        when 'T': true
-        when 'F': false
-        when 'N': nil
-        when 'R': @refs[@data.slice!(0, 4).unpack('N')[0]]
+        when 'I'
+          @data.slice!(0, 4).unpack('N')[0]
+        when 'L'
+          parse_long
+        when 'd'
+           l = parse_long; Time.at(l / 1000, l % 1000 * 1000)
+        when 'D'
+           @data.slice!(0, 8).unpack('G')[0]
+        when 'T'
+          true
+        when 'F'
+          false
+        when 'N'
+          nil
+        when 'R'
+          @refs[@data.slice!(0, 4).unpack('N')[0]]
         when 'V'
           # Skip type + type length (2 bytes) if specified.
           @data.slice!(0, 3 + @data.unpack('an')[1]) if @data[0,1] == 't'
